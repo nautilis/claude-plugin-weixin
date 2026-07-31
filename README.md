@@ -4,6 +4,12 @@ WeChat (微信) channel plugin for [Claude Code](https://claude.com/claude-code)
 
 Uses the WeChat iLink Bot API with HTTP long-poll. No public webhook needed.
 
+> A fork of [m1heng/claude-plugin-weixin](https://github.com/m1heng/claude-plugin-weixin),
+> adding image/file/video transfer, a typing indicator and quoted-message
+> resolution. The CDN pipeline and wire format are ported from
+> [Tencent/openclaw-weixin](https://github.com/Tencent/openclaw-weixin) (MIT),
+> which speaks the same iLink Bot API.
+
 ## Prerequisites
 
 - [Claude Code](https://claude.com/claude-code) v2.1.80+
@@ -114,4 +120,6 @@ WeChat requires a `context_token` to be passed back when replying. This token co
 
 ## License
 
-MIT
+MIT — as is [m1heng/claude-plugin-weixin](https://github.com/m1heng/claude-plugin-weixin),
+which this is derived from, and [Tencent/openclaw-weixin](https://github.com/Tencent/openclaw-weixin),
+from which the CDN and messaging code is ported.
