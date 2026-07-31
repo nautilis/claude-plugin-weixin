@@ -79,6 +79,15 @@ than 7 days are pruned when the server starts.
 Paths appear in notification metadata only — never in message content, which a
 sender could forge.
 
+### Typing indicator
+
+The sender sees "typing" from the moment their message passes the access gate
+until the reply is sent. The state is refreshed every 5 seconds and clears
+itself after 3 minutes if no reply arrives.
+
+Set `"typing": false` in `~/.claude/channels/weixin/access.json` to disable it.
+Failures are silent — the indicator never blocks message delivery or replies.
+
 ### Key difference from Telegram/Feishu
 
 WeChat requires a `context_token` to be passed back when replying. This token comes from the inbound message and is automatically included in the channel notification metadata. Claude passes it back through the reply tool.

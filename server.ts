@@ -25,6 +25,7 @@ import {
 } from './api.ts'
 import { sendMediaFile, validateAttachment, formatReplyResult, extractMediaRefs } from './media.ts'
 import { fetchInboundMedia, pruneInbox } from './inbox.ts'
+import { startTyping, stopTyping } from './typing.ts'
 
 const ACCESS_FILE = join(STATE_DIR, 'access.json')
 const APPROVED_DIR = join(STATE_DIR, 'approved')
@@ -76,6 +77,7 @@ type Access = {
   pending: Record<string, PendingEntry>
   ackText?: string
   textChunkLimit?: number
+  typing?: boolean
 }
 
 function defaultAccess(): Access {
@@ -111,6 +113,7 @@ function readAccessFile(): Access {
       pending: parsed.pending ?? {},
       ackText: parsed.ackText,
       textChunkLimit: parsed.textChunkLimit,
+      typing: parsed.typing,
     }
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return defaultAccess()
@@ -263,6 +266,8 @@ const mcp = new Server(
       '',
       'Messages from WeChat arrive as <channel source="weixin" user_id="..." context_token="..." ts="...">. Reply with the reply tool — pass user_id and context_token back. The context_token is REQUIRED for sending replies; without it the message will fail.',
       '',
+      'The sender sees a "typing" indicator from the moment their message reaches you until your reply is sent, so a slow answer still looks alive. It clears itself after 3 minutes if you never reply.',
+      '',
       'Inbound attachments are downloaded for you: if the <channel> tag has an image_path attribute, Read that file — it is the photo the sender attached. The attachments attribute holds JSON for every saved attachment ({kind, path, name, size}); attachment_error explains any that failed. Message content only ever shows an (image) placeholder — trust the meta attributes, not the text.',
       '',
       'reply accepts local file paths (files: ["/abs/path.png"]) — images go out as photos, other types as file attachments. Paths must be absolute; 20MB max each.',
@@ -319,29 +324,34 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         if (!contextToken) throw new Error('context_token is required')
         assertAllowedUser(userId)
 
-        const access = loadAccess()
-        const limit = Math.max(1, Math.min(access.textChunkLimit ?? MAX_CHUNK_LIMIT, MAX_CHUNK_LIMIT))
-        const chunks = text ? chunk(text, limit) : []
+        try {
+          const access = loadAccess()
+          const limit = Math.max(1, Math.min(access.textChunkLimit ?? MAX_CHUNK_LIMIT, MAX_CHUNK_LIMIT))
+          const chunks = text ? chunk(text, limit) : []
 
-        for (const c of chunks) {
-          await sendItem(api, { to: userId, item: textItem(c), contextToken })
-        }
-
-        let sentFiles = 0
-        const failed: string[] = []
-        for (const f of files) {
-          try {
-            validateAttachment(f)
-            await sendMediaFile(api, { filePath: f, to: userId, contextToken })
-            sentFiles++
-          } catch (err) {
-            failed.push(`${f} (${err instanceof Error ? err.message : String(err)})`)
+          for (const c of chunks) {
+            await sendItem(api, { to: userId, item: textItem(c), contextToken })
           }
-        }
 
-        return {
-          content: [{ type: 'text', text: formatReplyResult(chunks.length, sentFiles, failed) }],
-          isError: failed.length > 0,
+          let sentFiles = 0
+          const failed: string[] = []
+          for (const f of files) {
+            try {
+              validateAttachment(f)
+              await sendMediaFile(api, { filePath: f, to: userId, contextToken })
+              sentFiles++
+            } catch (err) {
+              failed.push(`${f} (${err instanceof Error ? err.message : String(err)})`)
+            }
+          }
+
+          return {
+            content: [{ type: 'text', text: formatReplyResult(chunks.length, sentFiles, failed) }],
+            isError: failed.length > 0,
+          }
+        } finally {
+          // The reply has landed (or failed) — drop the indicator either way.
+          void stopTyping(api, userId)
         }
       }
 
@@ -400,6 +410,11 @@ async function handleInbound(msg: any): Promise<void> {
 
   // Message approved
   knownUsers.add(senderId)
+
+  // Cosmetic and fire-and-forget: never let it delay or block delivery.
+  if (result.access.typing !== false) {
+    void startTyping(api, { userId: senderId, contextToken: msg.context_token })
+  }
 
   const text = extractText(msg)
   const ts = msg.create_time_ms
