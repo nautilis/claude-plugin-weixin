@@ -26,11 +26,24 @@ function renderItem(item: any): string {
   }
 }
 
+/**
+ * The message this one quotes, rendered as a `[引用: ...]` line.
+ * Empty when there is no quote or nothing in it worth showing.
+ */
+function renderQuote(ref: any): string {
+  if (!ref) return ''
+  const parts: string[] = []
+  if (ref.title) parts.push(String(ref.title))
+  const body = renderItem(ref.message_item)
+  if (body) parts.push(body)
+  return parts.length > 0 ? `[引用: ${parts.join(' | ')}]\n` : ''
+}
+
 export function extractText(msg: any): string {
   const parts: string[] = []
   for (const item of msg?.item_list ?? []) {
     const rendered = renderItem(item)
-    if (rendered) parts.push(rendered)
+    if (rendered) parts.push(renderQuote(item?.ref_msg) + rendered)
   }
   return parts.join('\n') || '(empty message)'
 }

@@ -136,6 +136,38 @@ test('extractMediaRefs pulls file refs with name and plaintext length', () => {
   expect(refs[0]!.declaredSize).toBe(2048)
 })
 
+test('extractMediaRefs downloads the media a quoted message points at', () => {
+  const refs = extractMediaRefs({
+    item_list: [{
+      type: 1,
+      text_item: { text: '这个怎么改' },
+      ref_msg: {
+        message_item: {
+          type: 2,
+          image_item: { media: { encrypt_query_param: 'QP', aes_key: 'B64KEY' }, hd_size: 4096 },
+        },
+      },
+    }],
+  })
+  expect(refs).toHaveLength(1)
+  expect(refs[0]!.kind).toBe('image')
+  expect(refs[0]!.encryptedParam).toBe('QP')
+})
+
+test('extractMediaRefs puts the attached image before the quoted one', () => {
+  const refs = extractMediaRefs({
+    item_list: [{
+      type: 2,
+      image_item: { media: { encrypt_query_param: 'NEW', aes_key: 'K' } },
+      ref_msg: {
+        message_item: { type: 2, image_item: { media: { encrypt_query_param: 'OLD', aes_key: 'K' } } },
+      },
+    }],
+  })
+  // image_path takes the first ref; the newly attached photo is the subject.
+  expect(refs.map(r => r.encryptedParam)).toEqual(['NEW', 'OLD'])
+})
+
 test('extractMediaRefs skips items with no CDN reference at all', () => {
   expect(extractMediaRefs({ item_list: [
     { type: 2, image_item: { media: {} } },

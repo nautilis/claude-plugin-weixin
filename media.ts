@@ -151,33 +151,41 @@ export type MediaRef = {
 export function extractMediaRefs(msg: any): MediaRef[] {
   const refs: MediaRef[] = []
   for (const item of msg?.item_list ?? []) {
-    if (item.type === MessageItemType.IMAGE) {
-      const img = item.image_item
-      const media = img?.media
-      if (!media?.encrypt_query_param && !media?.full_url) continue
-      refs.push({
-        kind: 'image',
-        encryptedParam: media.encrypt_query_param,
-        fullUrl: media.full_url,
-        // image_item.aeskey is hex and takes precedence over media.aes_key.
-        aesKeyBase64: img.aeskey
-          ? Buffer.from(img.aeskey, 'hex').toString('base64')
-          : media.aes_key,
-        declaredSize: img.hd_size ?? img.mid_size,
-      })
-    } else if (item.type === MessageItemType.FILE) {
-      const f = item.file_item
-      const media = f?.media
-      if (!media?.encrypt_query_param && !media?.full_url) continue
-      refs.push({
-        kind: 'file',
-        encryptedParam: media.encrypt_query_param,
-        fullUrl: media.full_url,
-        aesKeyBase64: media.aes_key,
-        declaredSize: f.len != null ? Number(f.len) : undefined,
-        name: f.file_name,
-      })
-    }
+    // The item's own media first: image_path takes the first ref, and a freshly
+    // attached photo is the subject even when the message also quotes one.
+    collectMediaRef(refs, item)
+    // A quote carries its own media — "这个怎么改" about a photo needs the bytes.
+    collectMediaRef(refs, item?.ref_msg?.message_item)
   }
   return refs
+}
+
+function collectMediaRef(refs: MediaRef[], item: any): void {
+  if (item?.type === MessageItemType.IMAGE) {
+    const img = item.image_item
+    const media = img?.media
+    if (!media?.encrypt_query_param && !media?.full_url) return
+    refs.push({
+      kind: 'image',
+      encryptedParam: media.encrypt_query_param,
+      fullUrl: media.full_url,
+      // image_item.aeskey is hex and takes precedence over media.aes_key.
+      aesKeyBase64: img.aeskey
+        ? Buffer.from(img.aeskey, 'hex').toString('base64')
+        : media.aes_key,
+      declaredSize: img.hd_size ?? img.mid_size,
+    })
+  } else if (item?.type === MessageItemType.FILE) {
+    const f = item.file_item
+    const media = f?.media
+    if (!media?.encrypt_query_param && !media?.full_url) return
+    refs.push({
+      kind: 'file',
+      encryptedParam: media.encrypt_query_param,
+      fullUrl: media.full_url,
+      aesKeyBase64: media.aes_key,
+      declaredSize: f.len != null ? Number(f.len) : undefined,
+      name: f.file_name,
+    })
+  }
 }
