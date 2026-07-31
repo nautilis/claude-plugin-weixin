@@ -2,10 +2,10 @@ import { test, expect } from 'bun:test'
 import { mkdtempSync, writeFileSync, mkdirSync, truncateSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { STATE_DIR, MessageItemType } from './api.ts'
+import { STATE_DIR, INBOX_DIR, MessageItemType } from './api.ts'
 import {
   getMimeFromFilename, isImageFile, buildImageItem, buildFileItem,
-  validateAttachment, formatReplyResult, MAX_FILE_BYTES,
+  validateAttachment, formatReplyResult, MAX_FILE_BYTES, extractMediaRefs,
 } from './media.ts'
 
 const uploaded = {
@@ -90,4 +90,72 @@ test('formatReplyResult reports chunks, files and per-file failures', () => {
   expect(formatReplyResult(1, 2, [])).toBe('sent 1 chunk(s), 2 file(s)')
   expect(formatReplyResult(1, 1, ['/x.png (CDN 403)']))
     .toBe('sent 1 chunk(s), 1 file(s); failed: /x.png (CDN 403)')
+})
+
+test('extractMediaRefs pulls image refs, preferring the top-level hex aeskey', () => {
+  const rawKey = Buffer.alloc(16, 4)
+  const refs = extractMediaRefs({
+    item_list: [
+      { type: 1, text_item: { text: 'hello' } },
+      {
+        type: 2,
+        image_item: {
+          aeskey: rawKey.toString('hex'),
+          media: { encrypt_query_param: 'QP', aes_key: 'SHOULD-BE-IGNORED' },
+          hd_size: 4096,
+        },
+      },
+    ],
+  })
+  expect(refs).toHaveLength(1)
+  expect(refs[0]!.kind).toBe('image')
+  expect(refs[0]!.encryptedParam).toBe('QP')
+  expect(refs[0]!.declaredSize).toBe(4096)
+  // top-level aeskey is hex; it is re-encoded as base64 of the RAW bytes
+  expect(refs[0]!.aesKeyBase64).toBe(rawKey.toString('base64'))
+})
+
+test('extractMediaRefs falls back to media.aes_key and mid_size', () => {
+  const refs = extractMediaRefs({
+    item_list: [{ type: 2, image_item: { media: { aes_key: 'B64KEY', full_url: 'https://cdn/x' }, mid_size: 99 } }],
+  })
+  expect(refs[0]!.aesKeyBase64).toBe('B64KEY')
+  expect(refs[0]!.fullUrl).toBe('https://cdn/x')
+  expect(refs[0]!.declaredSize).toBe(99)
+})
+
+test('extractMediaRefs pulls file refs with name and plaintext length', () => {
+  const refs = extractMediaRefs({
+    item_list: [{
+      type: 4,
+      file_item: { media: { encrypt_query_param: 'FP', aes_key: 'FK' }, file_name: 'report.pdf', len: '2048' },
+    }],
+  })
+  expect(refs[0]!.kind).toBe('file')
+  expect(refs[0]!.name).toBe('report.pdf')
+  expect(refs[0]!.declaredSize).toBe(2048)
+})
+
+test('extractMediaRefs skips items with no CDN reference at all', () => {
+  expect(extractMediaRefs({ item_list: [
+    { type: 2, image_item: { media: {} } },
+    { type: 4, file_item: { file_name: 'x.pdf' } },
+    { type: 3, voice_item: { text: 'hi' } },
+  ] })).toHaveLength(0)
+  expect(extractMediaRefs({})).toHaveLength(0)
+})
+
+test('validateAttachment allows inbox files but still blocks credentials', () => {
+  mkdirSync(INBOX_DIR, { recursive: true })
+  const inboxFile = join(INBOX_DIR, 'inbox-allowed-test.png')
+  writeFileSync(inboxFile, 'x')
+  const stateFile = join(STATE_DIR, 'validate-inbox-test.tmp')
+  writeFileSync(stateFile, 'x')
+  try {
+    expect(() => validateAttachment(inboxFile)).not.toThrow()
+    expect(() => validateAttachment(stateFile)).toThrow(/channel state/)
+  } finally {
+    rmSync(inboxFile, { force: true })
+    rmSync(stateFile, { force: true })
+  }
 })

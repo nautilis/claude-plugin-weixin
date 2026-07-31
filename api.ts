@@ -13,6 +13,9 @@ import { fileURLToPath } from 'url'
 
 export const STATE_DIR = join(homedir(), '.claude', 'channels', 'weixin')
 
+/** Inbound media lands here; deliberately sendable (see media.ts). */
+export const INBOX_DIR = join(STATE_DIR, 'inbox')
+
 export type ApiOptions = { token: string; baseUrl: string }
 export type MessageItem = Record<string, unknown>
 

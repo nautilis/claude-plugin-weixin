@@ -8,7 +8,7 @@
 import { statSync, realpathSync } from 'fs'
 import { basename, extname, isAbsolute, sep } from 'path'
 import {
-  MessageItemType, UploadMediaType, STATE_DIR, sendItem,
+  MessageItemType, UploadMediaType, STATE_DIR, INBOX_DIR, sendItem,
   type ApiOptions, type MessageItem,
 } from './api.ts'
 import { uploadMediaToCdn, type UploadedFileInfo } from './cdn.ts'
@@ -70,16 +70,27 @@ export function buildFileItem(u: UploadedFileInfo, fileName: string): MessageIte
   }
 }
 
-/** Never let an attachment exfiltrate the channel's own credentials. */
+/**
+ * Never let an attachment exfiltrate the channel's own credentials. The inbox
+ * is deliberately exempt — it holds media the sender just sent us, and echoing
+ * that back is a legitimate reply.
+ */
 function assertNotChannelState(filePath: string): void {
   let real: string, stateReal: string
   try {
     real = realpathSync(filePath)
     stateReal = realpathSync(STATE_DIR)
   } catch { return }
-  if (real === stateReal || real.startsWith(stateReal + sep)) {
+  if (real !== stateReal && !real.startsWith(stateReal + sep)) return
+
+  let inboxReal: string
+  try {
+    inboxReal = realpathSync(INBOX_DIR)
+  } catch {
     throw new Error(`refusing to send channel state: ${filePath}`)
   }
+  if (real.startsWith(inboxReal + sep)) return
+  throw new Error(`refusing to send channel state: ${filePath}`)
 }
 
 export function validateAttachment(filePath: string): void {
@@ -118,4 +129,55 @@ export async function sendMediaFile(
   })
   const item = image ? buildImageItem(uploaded) : buildFileItem(uploaded, basename(p.filePath))
   await sendItem(opts, { to: p.to, item, contextToken: p.contextToken })
+}
+
+export type MediaRef = {
+  kind: 'image' | 'file'
+  encryptedParam?: string
+  fullUrl?: string
+  /** CDNMedia.aes_key encoding; see cdn.ts parseAesKey. */
+  aesKeyBase64?: string
+  /** Sender-declared byte count — images report ciphertext, files plaintext. */
+  declaredSize?: number
+  name?: string
+}
+
+/**
+ * Pull downloadable media out of an inbound message. Pure — no I/O — so the
+ * wire-format quirks stay testable.
+ *
+ * Ported from Tencent/openclaw-weixin src/media/media-download.ts.
+ */
+export function extractMediaRefs(msg: any): MediaRef[] {
+  const refs: MediaRef[] = []
+  for (const item of msg?.item_list ?? []) {
+    if (item.type === MessageItemType.IMAGE) {
+      const img = item.image_item
+      const media = img?.media
+      if (!media?.encrypt_query_param && !media?.full_url) continue
+      refs.push({
+        kind: 'image',
+        encryptedParam: media.encrypt_query_param,
+        fullUrl: media.full_url,
+        // image_item.aeskey is hex and takes precedence over media.aes_key.
+        aesKeyBase64: img.aeskey
+          ? Buffer.from(img.aeskey, 'hex').toString('base64')
+          : media.aes_key,
+        declaredSize: img.hd_size ?? img.mid_size,
+      })
+    } else if (item.type === MessageItemType.FILE) {
+      const f = item.file_item
+      const media = f?.media
+      if (!media?.encrypt_query_param && !media?.full_url) continue
+      refs.push({
+        kind: 'file',
+        encryptedParam: media.encrypt_query_param,
+        fullUrl: media.full_url,
+        aesKeyBase64: media.aes_key,
+        declaredSize: f.len != null ? Number(f.len) : undefined,
+        name: f.file_name,
+      })
+    }
+  }
+  return refs
 }
