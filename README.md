@@ -88,6 +88,14 @@ itself after 3 minutes if no reply arrives.
 Set `"typing": false` in `~/.claude/channels/weixin/access.json` to disable it.
 Failures are silent — the indicator never blocks message delivery or replies.
 
+### Quoted messages
+
+When the sender quotes an earlier message, the body Claude sees opens with a
+`[引用: 标题 | 内容]` line, so a bare "这个怎么改" still carries what it refers
+to. A photo or file inside the quote is downloaded like any other attachment;
+the message's own attachment stays first, so `image_path` keeps pointing at the
+photo the sender just sent.
+
 ### Key difference from Telegram/Feishu
 
 WeChat requires a `context_token` to be passed back when replying. This token comes from the inbound message and is automatically included in the channel notification metadata. Claude passes it back through the reply tool.

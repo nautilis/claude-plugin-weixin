@@ -1,6 +1,6 @@
 {
   "name": "claude-channel-weixin",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "license": "MIT",
   "ilink_appid": "bot",
   "type": "module",
