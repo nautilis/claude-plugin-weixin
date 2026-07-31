@@ -2,6 +2,7 @@
   "name": "claude-channel-weixin",
   "version": "0.1.0",
   "license": "MIT",
+  "ilink_appid": "bot",
   "type": "module",
   "bin": "./server.ts",
   "scripts": {

@@ -20,10 +20,11 @@ import {
   readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync,
   statSync, renameSync, realpathSync,
 } from 'fs'
-import { homedir } from 'os'
 import { join, sep } from 'path'
+import {
+  STATE_DIR, getUpdates, sendItem, textItem, type ApiOptions,
+} from './api.ts'
 
-const STATE_DIR = join(homedir(), '.claude', 'channels', 'weixin')
 const ACCESS_FILE = join(STATE_DIR, 'access.json')
 const APPROVED_DIR = join(STATE_DIR, 'approved')
 const CREDENTIALS_FILE = join(STATE_DIR, 'credentials.json')
@@ -56,8 +57,8 @@ if (!creds?.token || !creds?.baseUrl) {
   process.exit(1)
 }
 
-const TOKEN = creds.token
 const BASE_URL = creds.baseUrl.endsWith('/') ? creds.baseUrl : `${creds.baseUrl}/`
+const api: ApiOptions = { token: creds.token, baseUrl: BASE_URL }
 
 // --- Types ---
 
@@ -87,73 +88,6 @@ const knownUsers = new Set<string>()
 
 // Map from_user_id → latest context_token. Required for sending replies.
 const contextTokenMap = new Map<string, string>()
-
-// --- API helpers ---
-
-function randomWechatUin(): string {
-  const uint32 = randomBytes(4).readUInt32BE(0)
-  return Buffer.from(String(uint32), 'utf-8').toString('base64')
-}
-
-function buildHeaders(): Record<string, string> {
-  return {
-    'Content-Type': 'application/json',
-    'AuthorizationType': 'ilink_bot_token',
-    'Authorization': `Bearer ${TOKEN}`,
-    'X-WECHAT-UIN': randomWechatUin(),
-  }
-}
-
-async function apiFetch(endpoint: string, body: object, timeoutMs = 15000): Promise<any> {
-  const url = new URL(endpoint, BASE_URL)
-  const bodyStr = JSON.stringify(body)
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    const res = await fetch(url.toString(), {
-      method: 'POST',
-      headers: { ...buildHeaders(), 'Content-Length': String(Buffer.byteLength(bodyStr, 'utf-8')) },
-      body: bodyStr,
-      signal: controller.signal,
-    })
-    clearTimeout(timer)
-    const text = await res.text()
-    if (!res.ok) throw new Error(`${endpoint} ${res.status}: ${text}`)
-    return JSON.parse(text)
-  } catch (err) {
-    clearTimeout(timer)
-    throw err
-  }
-}
-
-async function getUpdates(buf: string): Promise<any> {
-  try {
-    return await apiFetch('ilink/bot/getupdates', {
-      get_updates_buf: buf,
-      base_info: { channel_version: '0.1.0' },
-    }, 35000)
-  } catch (err: any) {
-    if (err?.name === 'AbortError') {
-      return { ret: 0, msgs: [], get_updates_buf: buf }
-    }
-    throw err
-  }
-}
-
-async function sendMessage(to: string, text: string, contextToken: string): Promise<void> {
-  await apiFetch('ilink/bot/sendmessage', {
-    msg: {
-      from_user_id: '',
-      to_user_id: to,
-      client_id: `claude-weixin-${Date.now()}-${randomBytes(4).toString('hex')}`,
-      message_type: 2, // BOT
-      message_state: 2, // FINISH
-      item_list: [{ type: 1, text_item: { text } }],
-      context_token: contextToken,
-    },
-    base_info: { channel_version: '0.1.0' },
-  })
-}
 
 // --- Security ---
 
@@ -377,7 +311,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const chunks = chunk(text, limit)
 
         for (const c of chunks) {
-          await sendMessage(userId, c, contextToken)
+          await sendItem(api, { to: userId, item: textItem(c), contextToken })
         }
 
         return { content: [{ type: 'text', text: `sent ${chunks.length} chunk(s)` }] }
@@ -425,11 +359,11 @@ async function handleInbound(msg: any): Promise<void> {
     const ct = msg.context_token
     if (ct) {
       const lead = result.isResend ? '仍在等待配对' : '需要配对验证'
-      await sendMessage(
-        senderId,
-        `${lead} — 在 Claude Code 终端运行：\n\n/weixin:access pair ${result.code}`,
-        ct,
-      ).catch((err: any) => {
+      await sendItem(api, {
+        to: senderId,
+        item: textItem(`${lead} — 在 Claude Code 终端运行：\n\n/weixin:access pair ${result.code}`),
+        contextToken: ct,
+      }).catch((err: any) => {
         process.stderr.write(`weixin channel: pairing reply failed: ${err}\n`)
       })
     }
@@ -474,7 +408,7 @@ async function pollLoop(): Promise<void> {
 
   while (true) {
     try {
-      const resp = await getUpdates(getUpdatesBuf)
+      const resp = await getUpdates(api, getUpdatesBuf)
 
       if (resp.ret !== undefined && resp.ret !== 0) {
         failures++
