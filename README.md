@@ -68,6 +68,17 @@ message is sent. Text and each attachment go out as separate messages.
 
 The CDN pipeline is ported from [Tencent/openclaw-weixin](https://github.com/Tencent/openclaw-weixin) (MIT).
 
+### Receiving images and files
+
+Inbound photos and file attachments are downloaded, decrypted and written to
+`~/.claude/channels/weixin/inbox/`. The channel notification carries
+`image_path` (first photo) and `attachments` (JSON for all of them); Claude
+reads the file from there. Attachments over 20MB are skipped, and files older
+than 7 days are pruned when the server starts.
+
+Paths appear in notification metadata only — never in message content, which a
+sender could forge.
+
 ### Key difference from Telegram/Feishu
 
 WeChat requires a `context_token` to be passed back when replying. This token comes from the inbound message and is automatically included in the channel notification metadata. Claude passes it back through the reply tool.

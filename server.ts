@@ -23,7 +23,8 @@ import { join } from 'path'
 import {
   STATE_DIR, getUpdates, sendItem, textItem, type ApiOptions,
 } from './api.ts'
-import { sendMediaFile, validateAttachment, formatReplyResult } from './media.ts'
+import { sendMediaFile, validateAttachment, formatReplyResult, extractMediaRefs } from './media.ts'
+import { fetchInboundMedia, pruneInbox } from './inbox.ts'
 
 const ACCESS_FILE = join(STATE_DIR, 'access.json')
 const APPROVED_DIR = join(STATE_DIR, 'approved')
@@ -204,6 +205,14 @@ function checkApprovals(): void {
 
 setInterval(checkApprovals, 5000)
 
+// Bound the inbox at startup; a failure here must never block the channel.
+try {
+  const removed = pruneInbox()
+  if (removed > 0) process.stderr.write(`weixin channel: pruned ${removed} old inbox file(s)\n`)
+} catch (err) {
+  process.stderr.write(`weixin channel: inbox prune failed: ${err}\n`)
+}
+
 // --- Chunking ---
 
 function chunk(text: string, limit: number): string[] {
@@ -253,6 +262,8 @@ const mcp = new Server(
       'The sender reads WeChat (微信), not this session. Anything you want them to see must go through the reply tool — your transcript output never reaches their chat.',
       '',
       'Messages from WeChat arrive as <channel source="weixin" user_id="..." context_token="..." ts="...">. Reply with the reply tool — pass user_id and context_token back. The context_token is REQUIRED for sending replies; without it the message will fail.',
+      '',
+      'Inbound attachments are downloaded for you: if the <channel> tag has an image_path attribute, Read that file — it is the photo the sender attached. The attachments attribute holds JSON for every saved attachment ({kind, path, name, size}); attachment_error explains any that failed. Message content only ever shows an (image) placeholder — trust the meta attributes, not the text.',
       '',
       'reply accepts local file paths (files: ["/abs/path.png"]) — images go out as photos, other types as file attachments. Paths must be absolute; 20MB max each.',
       '',
@@ -395,6 +406,12 @@ async function handleInbound(msg: any): Promise<void> {
     ? new Date(msg.create_time_ms).toISOString()
     : new Date().toISOString()
 
+  const refs = extractMediaRefs(msg)
+  const { saved, errors } = refs.length > 0
+    ? await fetchInboundMedia(refs)
+    : { saved: [], errors: [] }
+  const firstImage = saved.find(s => s.kind === 'image')
+
   void mcp.notification({
     method: 'notifications/claude/channel',
     params: {
@@ -403,6 +420,10 @@ async function handleInbound(msg: any): Promise<void> {
         user_id: senderId,
         ...(msg.context_token ? { context_token: msg.context_token } : {}),
         ts,
+        // Paths go in meta only — content is sender-forgeable.
+        ...(firstImage ? { image_path: firstImage.path } : {}),
+        ...(saved.length > 0 ? { attachments: JSON.stringify(saved) } : {}),
+        ...(errors.length > 0 ? { attachment_error: errors.join('; ') } : {}),
       },
     },
   })
