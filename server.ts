@@ -26,6 +26,7 @@ import {
 import { sendMediaFile, validateAttachment, formatReplyResult, extractMediaRefs } from './media.ts'
 import { fetchInboundMedia, pruneInbox } from './inbox.ts'
 import { startTyping, stopTyping } from './typing.ts'
+import { extractText } from './text.ts'
 
 const ACCESS_FILE = join(STATE_DIR, 'access.json')
 const APPROVED_DIR = join(STATE_DIR, 'approved')
@@ -232,27 +233,6 @@ function chunk(text: string, limit: number): string[] {
   }
   if (rest) out.push(rest)
   return out
-}
-
-// --- Extract text from message items ---
-
-function extractText(msg: any): string {
-  const items = msg.item_list ?? []
-  const parts: string[] = []
-  for (const item of items) {
-    if (item.type === 1 && item.text_item?.text) {
-      parts.push(item.text_item.text)
-    } else if (item.type === 2) {
-      parts.push('(image)')
-    } else if (item.type === 3) {
-      parts.push(item.voice_item?.text ?? '(voice)')
-    } else if (item.type === 4) {
-      parts.push(`(file: ${item.file_item?.file_name ?? 'unknown'})`)
-    } else if (item.type === 5) {
-      parts.push('(video)')
-    }
-  }
-  return parts.join('\n') || '(empty message)'
 }
 
 // --- MCP Server ---
