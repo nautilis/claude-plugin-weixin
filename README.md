@@ -12,11 +12,11 @@ Uses the WeChat iLink Bot API with HTTP long-poll. No public webhook needed.
 ## Install
 
 ```bash
-# Add the marketplace (one-time)
-claude plugin marketplace add m1heng/claude-plugins
+# Add the marketplace (one-time) — this repo is its own marketplace
+claude plugin marketplace add nautilis/claude-plugin-weixin
 
 # Install the plugin
-claude plugin install weixin@m1heng-plugins
+claude plugin install weixin@nautilis-plugins
 ```
 
 ## Configure
@@ -34,7 +34,7 @@ This will fetch a QR code from the WeChat iLink Bot API. Scan it with WeChat and
 ### Start with channels
 
 ```bash
-claude --dangerously-load-development-channels plugin:weixin@m1heng-plugins
+claude --dangerously-load-development-channels plugin:weixin@nautilis-plugins
 ```
 
 > The `--dangerously-load-development-channels` flag is required during the [channels research preview](https://code.claude.com/docs/en/channels-reference#test-during-the-research-preview) for non-official plugins.

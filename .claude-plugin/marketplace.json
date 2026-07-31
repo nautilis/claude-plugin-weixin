@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "nautilis-plugins",
+  "description": "Claude Code plugin marketplace by nautilis",
+  "owner": {
+    "name": "nautilis"
+  },
+  "plugins": [
+    {
+      "name": "weixin",
+      "description": "WeChat (微信) channel for Claude Code — messaging bridge via iLink Bot API with built-in access control. Sends and receives images and files, and resolves quoted messages.",
+      "category": "productivity",
+      "source": "./",
+      "homepage": "https://github.com/nautilis/claude-plugin-weixin"
+    }
+  ]
+}
