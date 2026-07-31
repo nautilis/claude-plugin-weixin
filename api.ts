@@ -166,3 +166,39 @@ export async function getUploadUrl(opts: ApiOptions, req: UploadUrlReq): Promise
   }
   return resp
 }
+
+export const TypingStatus = { TYPING: 1, CANCEL: 2 } as const
+
+export type ConfigResp = {
+  ret?: number
+  errmsg?: string
+  /** Base64 ticket required by sendTyping. */
+  typing_ticket?: string
+}
+
+/**
+ * Fetch per-user bot config. Unlike the other endpoints this does NOT throw on
+ * a non-zero ret — the typing indicator is optional, and the caller decides.
+ */
+export async function getConfig(
+  opts: ApiOptions,
+  p: { ilinkUserId: string; contextToken?: string },
+): Promise<ConfigResp> {
+  return apiPost(opts, 'ilink/bot/getconfig', {
+    ilink_user_id: p.ilinkUserId,
+    context_token: p.contextToken,
+    base_info: baseInfo(),
+  }, 10000)
+}
+
+export async function sendTyping(
+  opts: ApiOptions,
+  p: { ilinkUserId: string; ticket: string; status: number },
+): Promise<void> {
+  await apiPost(opts, 'ilink/bot/sendtyping', {
+    ilink_user_id: p.ilinkUserId,
+    typing_ticket: p.ticket,
+    status: p.status,
+    base_info: baseInfo(),
+  }, 10000)
+}

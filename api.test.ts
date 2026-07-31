@@ -2,6 +2,7 @@ import { test, expect, afterEach } from 'bun:test'
 import {
   buildClientVersion, randomWechatUin, buildHeaders,
   textItem, getUploadUrl, MessageItemType, UploadMediaType,
+  getConfig, sendTyping, TypingStatus,
 } from './api.ts'
 
 const realFetch = globalThis.fetch
@@ -72,4 +73,54 @@ test('getUploadUrl throws on non-zero ret', async () => {
       rawsize: 1, rawfilemd5: 'm', filesize: 16, no_need_thumb: true, aeskey: 'k',
     },
   )).rejects.toThrow(/ret=-14/)
+})
+
+test('getConfig posts the user id and returns the ticket', async () => {
+  let seenUrl = '', seenBody: any = null
+  globalThis.fetch = (async (url: any, init: any) => {
+    seenUrl = String(url)
+    seenBody = JSON.parse(init.body)
+    return new Response(JSON.stringify({ ret: 0, typing_ticket: 'TICKET' }))
+  }) as any
+
+  const resp = await getConfig(
+    { token: 't', baseUrl: 'https://api.example.com/' },
+    { ilinkUserId: 'u1', contextToken: 'ctx' },
+  )
+
+  expect(seenUrl).toBe('https://api.example.com/ilink/bot/getconfig')
+  expect(seenBody.ilink_user_id).toBe('u1')
+  expect(seenBody.context_token).toBe('ctx')
+  expect(resp.typing_ticket).toBe('TICKET')
+})
+
+test('getConfig returns non-zero ret instead of throwing — typing is optional', async () => {
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ ret: -1, errmsg: 'nope' }))) as any
+
+  const resp = await getConfig(
+    { token: 't', baseUrl: 'https://api.example.com/' },
+    { ilinkUserId: 'u1' },
+  )
+  expect(resp.ret).toBe(-1)
+})
+
+test('sendTyping posts the ticket and status', async () => {
+  let seenUrl = '', seenBody: any = null
+  globalThis.fetch = (async (url: any, init: any) => {
+    seenUrl = String(url)
+    seenBody = JSON.parse(init.body)
+    return new Response(JSON.stringify({ ret: 0 }))
+  }) as any
+
+  await sendTyping(
+    { token: 't', baseUrl: 'https://api.example.com/' },
+    { ilinkUserId: 'u1', ticket: 'TICKET', status: TypingStatus.CANCEL },
+  )
+
+  expect(seenUrl).toBe('https://api.example.com/ilink/bot/sendtyping')
+  expect(seenBody.ilink_user_id).toBe('u1')
+  expect(seenBody.typing_ticket).toBe('TICKET')
+  expect(seenBody.status).toBe(2)
+  expect(seenBody.base_info.channel_version).toBeTruthy()
 })
