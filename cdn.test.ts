@@ -68,6 +68,18 @@ test('uploadBufferToCdn aborts immediately on 4xx', async () => {
   expect(calls).toBe(1)
 })
 
+test('CDN errors surface x-error-code so failures are diagnosable', async () => {
+  // The CDN validates image content: a non-decodable image comes back as a bare
+  // 500 with x-error-code and no body. Without the code the failure is opaque.
+  globalThis.fetch = (async () =>
+    new Response('', { status: 500, headers: { 'x-error-code': '-5102031' } })) as any
+
+  await expect(uploadBufferToCdn({
+    buf: Buffer.from('abc'), uploadFullUrl: 'https://cdn/u',
+    filekey: 'fk', aeskey: Buffer.alloc(16, 1), label: 'test',
+  })).rejects.toThrow(/-5102031/)
+})
+
 test('uploadBufferToCdn retries 3 times on 5xx then throws', async () => {
   let calls = 0
   globalThis.fetch = (async () => {

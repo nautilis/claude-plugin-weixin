@@ -45,6 +45,24 @@ export function redactUrl(url: string): string {
 }
 
 /**
+ * The CDN reports failures through headers, often with an empty body — notably
+ * x-error-code -5102031, which it returns when a media_type=IMAGE upload does
+ * not decode as an image. Keep every signal it gives us.
+ */
+async function describeCdnError(res: Response): Promise<string> {
+  const parts: string[] = []
+  const code = res.headers.get('x-error-code')
+  const msg = res.headers.get('x-error-message')
+  if (code) parts.push(`x-error-code=${code}`)
+  if (msg) parts.push(msg)
+  if (parts.length === 0) {
+    const body = (await res.text()).trim()
+    parts.push(body ? body.slice(0, 200) : '(no error detail)')
+  }
+  return parts.join(' ')
+}
+
+/**
  * Upload one buffer to the Weixin CDN, encrypted. Retries server errors up to
  * UPLOAD_MAX_RETRIES; client errors (4xx) abort immediately.
  */
@@ -80,12 +98,10 @@ export async function uploadBufferToCdn(p: {
         body: new Uint8Array(ciphertext),
       })
       if (res.status >= 400 && res.status < 500) {
-        const errMsg = res.headers.get('x-error-message') ?? (await res.text())
-        throw new Error(`CDN upload client error ${res.status}: ${errMsg}`)
+        throw new Error(`CDN upload client error ${res.status}: ${await describeCdnError(res)}`)
       }
       if (res.status !== 200) {
-        const errMsg = res.headers.get('x-error-message') ?? `status ${res.status}`
-        throw new Error(`CDN upload server error: ${errMsg}`)
+        throw new Error(`CDN upload server error ${res.status}: ${await describeCdnError(res)}`)
       }
       const downloadParam = res.headers.get('x-encrypted-param')
       if (!downloadParam) {
