@@ -68,12 +68,33 @@ function baseInfo(): object {
   return { channel_version: CHANNEL_VERSION }
 }
 
+/**
+ * Pull message ids out of a response body before they are parsed.
+ *
+ * Ids are int64: JSON.parse turns 7488896191118167176 into 7488896191118167000,
+ * and a rounded id never matches the exact one a quote carries.
+ */
+export function extractMessageIds(raw: string): string[] {
+  const ids: string[] = []
+  for (const m of raw.matchAll(/"message_id"\s*:\s*"?(\d+)"?/g)) ids.push(m[1]!)
+  return ids
+}
+
 export async function apiPost(
   opts: ApiOptions,
   endpoint: string,
   body: object,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<any> {
+  return JSON.parse(await postText(opts, endpoint, body, timeoutMs))
+}
+
+async function postText(
+  opts: ApiOptions,
+  endpoint: string,
+  body: object,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+): Promise<string> {
   const base = opts.baseUrl.endsWith('/') ? opts.baseUrl : `${opts.baseUrl}/`
   const url = new URL(endpoint, base)
   const bodyStr = JSON.stringify(body)
@@ -91,21 +112,28 @@ export async function apiPost(
     })
     const text = await res.text()
     if (!res.ok) throw new Error(`${endpoint} ${res.status}: ${text}`)
-    return JSON.parse(text)
+    return text
   } finally {
     clearTimeout(timer)
   }
 }
 
-export async function getUpdates(opts: ApiOptions, buf: string): Promise<any> {
+export type UpdatesResult = {
+  resp: any
+  /** Exact ids, positionally matching resp.msgs. */
+  messageIds: string[]
+}
+
+export async function getUpdates(opts: ApiOptions, buf: string): Promise<UpdatesResult> {
   try {
-    return await apiPost(opts, 'ilink/bot/getupdates', {
+    const raw = await postText(opts, 'ilink/bot/getupdates', {
       get_updates_buf: buf,
       base_info: baseInfo(),
     }, 35000)
+    return { resp: JSON.parse(raw), messageIds: extractMessageIds(raw) }
   } catch (err: any) {
     if (err?.name === 'AbortError') {
-      return { ret: 0, msgs: [], get_updates_buf: buf }
+      return { resp: { ret: 0, msgs: [], get_updates_buf: buf }, messageIds: [] }
     }
     throw err
   }
@@ -115,12 +143,12 @@ export function textItem(text: string): MessageItem {
   return { type: MessageItemType.TEXT, text_item: { text } }
 }
 
-/** Send one message carrying exactly one item. */
+/** Send one message carrying exactly one item; returns its server message id. */
 export async function sendItem(
   opts: ApiOptions,
   p: { to: string; item: MessageItem; contextToken: string },
-): Promise<void> {
-  const resp = await apiPost(opts, 'ilink/bot/sendmessage', {
+): Promise<string | undefined> {
+  const raw = await postText(opts, 'ilink/bot/sendmessage', {
     msg: {
       from_user_id: '',
       to_user_id: p.to,
@@ -131,10 +159,12 @@ export async function sendItem(
       context_token: p.contextToken,
     },
     base_info: baseInfo(),
-  })
+  }, DEFAULT_TIMEOUT_MS)
+  const resp = JSON.parse(raw)
   if (resp?.ret !== undefined && resp.ret !== 0) {
     throw new Error(`sendMessage ret=${resp.ret} errmsg=${resp.errmsg ?? '(none)'}`)
   }
+  return extractMessageIds(raw)[0]
 }
 
 export type UploadUrlReq = {

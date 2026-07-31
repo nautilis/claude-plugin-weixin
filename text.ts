@@ -26,24 +26,34 @@ function renderItem(item: any): string {
   }
 }
 
+/** Looks a quoted message up by id — see ledger.ts. */
+export type ResolveQuote = (msgId: string) => string | undefined
+
 /**
  * The message this one quotes, rendered as a `[引用: ...]` line.
- * Empty when there is no quote or nothing in it worth showing.
+ *
+ * The server sends `type: 0` with nothing but a msg_id, so the content
+ * normally comes from the ledger. Inline content is still preferred — it
+ * costs nothing to honour and would win if the server ever fills it in.
  */
-function renderQuote(ref: any): string {
+function renderQuote(ref: any, resolve?: ResolveQuote): string {
   if (!ref) return ''
   const parts: string[] = []
   if (ref.title) parts.push(String(ref.title))
-  const body = renderItem(ref.message_item)
-  if (body) parts.push(body)
+
+  const inline = renderItem(ref.message_item)
+  const msgId = ref.message_item?.msg_id
+  if (inline) parts.push(inline)
+  else if (msgId) parts.push(resolve?.(String(msgId)) ?? '一条更早的消息（无法还原）')
+
   return parts.length > 0 ? `[引用: ${parts.join(' | ')}]\n` : ''
 }
 
-export function extractText(msg: any): string {
+export function extractText(msg: any, resolve?: ResolveQuote): string {
   const parts: string[] = []
   for (const item of msg?.item_list ?? []) {
     const rendered = renderItem(item)
-    if (rendered) parts.push(renderQuote(item?.ref_msg) + rendered)
+    if (rendered) parts.push(renderQuote(item?.ref_msg, resolve) + rendered)
   }
   return parts.join('\n') || '(empty message)'
 }

@@ -2,8 +2,18 @@ import { test, expect, afterEach } from 'bun:test'
 import {
   buildClientVersion, randomWechatUin, buildHeaders,
   textItem, getUploadUrl, MessageItemType, UploadMediaType,
-  getConfig, sendTyping, TypingStatus,
+  getConfig, sendTyping, TypingStatus, sendItem, getUpdates, extractMessageIds,
 } from './api.ts'
+
+test('extractMessageIds reads ids from raw JSON before precision is lost', () => {
+  const raw = '{"ret":0,"msgs":[{"message_id":7488896191118167176,"item_list":[]},'
+    + '{"message_id":7488894805294949001}],"get_updates_buf":"B"}'
+  expect(extractMessageIds(raw)).toEqual(['7488896191118167176', '7488894805294949001'])
+})
+
+test('extractMessageIds tolerates ids already sent as strings', () => {
+  expect(extractMessageIds('{"message_id":"748889619111816717"}')).toEqual(['748889619111816717'])
+})
 
 const realFetch = globalThis.fetch
 afterEach(() => { globalThis.fetch = realFetch })
@@ -73,6 +83,31 @@ test('getUploadUrl throws on non-zero ret', async () => {
       rawsize: 1, rawfilemd5: 'm', filesize: 16, no_need_thumb: true, aeskey: 'k',
     },
   )).rejects.toThrow(/ret=-14/)
+})
+
+test('sendItem returns the server message id with int64 precision intact', async () => {
+  globalThis.fetch = (async () =>
+    new Response('{"message_id":7488899903869369171}')) as any
+
+  const id = await sendItem(
+    { token: 't', baseUrl: 'https://api.example.com/' },
+    { to: 'u1', item: textItem('hi'), contextToken: 'ctx' },
+  )
+  expect(id).toBe('7488899903869369171')
+})
+
+test('getUpdates surfaces per-message ids straight from the raw body', async () => {
+  globalThis.fetch = (async () => new Response(
+    '{"ret":0,"msgs":[{"message_id":7488896191118167176},{"message_id":7488894805294949001}],'
+    + '"get_updates_buf":"NEXT"}',
+  )) as any
+
+  const { resp, messageIds } = await getUpdates(
+    { token: 't', baseUrl: 'https://api.example.com/' }, 'BUF',
+  )
+  expect(resp.get_updates_buf).toBe('NEXT')
+  expect(resp.msgs).toHaveLength(2)
+  expect(messageIds).toEqual(['7488896191118167176', '7488894805294949001'])
 })
 
 test('getConfig posts the user id and returns the ticket', async () => {

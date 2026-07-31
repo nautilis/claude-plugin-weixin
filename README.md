@@ -91,10 +91,22 @@ Failures are silent — the indicator never blocks message delivery or replies.
 ### Quoted messages
 
 When the sender quotes an earlier message, the body Claude sees opens with a
-`[引用: 标题 | 内容]` line, so a bare "这个怎么改" still carries what it refers
-to. A photo or file inside the quote is downloaded like any other attachment;
-the message's own attachment stays first, so `image_path` keeps pointing at the
-photo the sender just sent.
+`[引用: 内容]` line, so a bare "这个怎么改" still carries what it refers to.
+
+WeChat does not send the quoted text — `ref_msg.message_item` arrives as
+`type: 0` carrying only a `msg_id`. The content is therefore resolved from a
+local ledger of messages this plugin has seen, in both directions, kept in
+`~/.claude/channels/weixin/messages.jsonl` for 7 days. Anything older than the
+ledger renders as `[引用: 一条更早的消息（无法还原）]`.
+
+Message ids are int64 and are read out of the raw response body: `JSON.parse`
+rounds them, and a rounded id never matches a quote.
+
+### Capturing raw payloads
+
+When the wire format is in question, `touch ~/.claude/channels/weixin/debug-raw`
+and inbound payloads are written to `~/.claude/channels/weixin/raw/`. Delete the
+marker to stop. Off by default.
 
 ### Key difference from Telegram/Feishu
 

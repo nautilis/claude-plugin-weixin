@@ -28,6 +28,7 @@ import { fetchInboundMedia, pruneInbox } from './inbox.ts'
 import { startTyping, stopTyping } from './typing.ts'
 import { extractText } from './text.ts'
 import { dumpRawMessage } from './debug.ts'
+import { loadLedger, lookupMessage, recordMessage } from './ledger.ts'
 
 const ACCESS_FILE = join(STATE_DIR, 'access.json')
 const APPROVED_DIR = join(STATE_DIR, 'approved')
@@ -218,6 +219,13 @@ try {
   process.stderr.write(`weixin channel: inbox prune failed: ${err}\n`)
 }
 
+// Quote resolution has to survive restarts; loading also prunes.
+try {
+  loadLedger()
+} catch (err) {
+  process.stderr.write(`weixin channel: ledger load failed: ${err}\n`)
+}
+
 // --- Chunking ---
 
 function chunk(text: string, limit: number): string[] {
@@ -313,7 +321,9 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
           const chunks = text ? chunk(text, limit) : []
 
           for (const c of chunks) {
-            await sendItem(api, { to: userId, item: textItem(c), contextToken })
+            const id = await sendItem(api, { to: userId, item: textItem(c), contextToken })
+            // Our own words, so a quote of this reply resolves too.
+            if (id) recordMessage(id, c)
           }
 
           let sentFiles = 0
@@ -359,7 +369,7 @@ await mcp.connect(new StdioServerTransport())
 
 // --- Inbound message handler ---
 
-async function handleInbound(msg: any): Promise<void> {
+async function handleInbound(msg: any, messageId?: string): Promise<void> {
   dumpRawMessage(msg)
 
   // Only handle user messages (type 1)
@@ -401,7 +411,10 @@ async function handleInbound(msg: any): Promise<void> {
     void startTyping(api, { userId: senderId, contextToken: msg.context_token })
   }
 
-  const text = extractText(msg)
+  const text = extractText(msg, lookupMessage)
+  // Remember it so a later quote of this message can be resolved.
+  if (messageId) recordMessage(messageId, text)
+
   const ts = msg.create_time_ms
     ? new Date(msg.create_time_ms).toISOString()
     : new Date().toISOString()
@@ -446,7 +459,7 @@ async function pollLoop(): Promise<void> {
 
   while (true) {
     try {
-      const resp = await getUpdates(api, getUpdatesBuf)
+      const { resp, messageIds } = await getUpdates(api, getUpdatesBuf)
 
       if (resp.ret !== undefined && resp.ret !== 0) {
         failures++
@@ -469,8 +482,11 @@ async function pollLoop(): Promise<void> {
       }
 
       const msgs = resp.msgs ?? []
-      for (const msg of msgs) {
-        await handleInbound(msg).catch((err: any) => {
+      // Ids come from the raw body positionally; if that mapping ever slips,
+      // drop the ids rather than attribute the wrong text to a message.
+      const ids = messageIds.length === msgs.length ? messageIds : []
+      for (const [i, msg] of msgs.entries()) {
+        await handleInbound(msg, ids[i]).catch((err: any) => {
           process.stderr.write(`weixin channel: message handler error: ${err}\n`)
         })
       }
