@@ -55,6 +55,19 @@ claude --dangerously-load-development-channels plugin:weixin@m1heng-plugins
 
 The plugin runs a local MCP server that long-polls the WeChat iLink Bot API for new messages. No public URL or webhook needed — everything runs locally. Messages from allowed senders are forwarded to your Claude Code session; Claude replies back through the same API.
 
+### Sending images and files
+
+`reply` takes an optional `files` array of absolute local paths:
+
+- `image/*` (png, jpg, gif, webp, bmp) → sent as a photo
+- everything else (pdf, zip, txt, …) → sent as a file attachment
+- 20MB per file
+
+Files are encrypted with AES-128-ECB and uploaded to the WeChat CDN before the
+message is sent. Text and each attachment go out as separate messages.
+
+The CDN pipeline is ported from [Tencent/openclaw-weixin](https://github.com/Tencent/openclaw-weixin) (MIT).
+
 ### Key difference from Telegram/Feishu
 
 WeChat requires a `context_token` to be passed back when replying. This token comes from the inbound message and is automatically included in the channel notification metadata. Claude passes it back through the reply tool.
