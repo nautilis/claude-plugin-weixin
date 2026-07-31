@@ -27,6 +27,7 @@ import { sendMediaFile, validateAttachment, formatReplyResult, extractMediaRefs 
 import { fetchInboundMedia, pruneInbox } from './inbox.ts'
 import { startTyping, stopTyping } from './typing.ts'
 import { extractText } from './text.ts'
+import { dumpRawMessage } from './debug.ts'
 
 const ACCESS_FILE = join(STATE_DIR, 'access.json')
 const APPROVED_DIR = join(STATE_DIR, 'approved')
@@ -359,6 +360,8 @@ await mcp.connect(new StdioServerTransport())
 // --- Inbound message handler ---
 
 async function handleInbound(msg: any): Promise<void> {
+  dumpRawMessage(msg)
+
   // Only handle user messages (type 1)
   if (msg.message_type !== 1) return
 
