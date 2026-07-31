@@ -6,6 +6,7 @@ import { join } from 'path'
 import {
   encryptAesEcb, aesEcbPaddedSize, buildCdnUploadUrl, redactUrl,
   uploadBufferToCdn, uploadMediaToCdn, CDN_BASE_URL,
+  decryptAesEcb, buildCdnDownloadUrl, parseAesKey, downloadAndDecrypt,
 } from './cdn.ts'
 
 const realFetch = globalThis.fetch
@@ -128,4 +129,61 @@ test('uploadMediaToCdn sends plaintext size/md5 and ciphertext size, uploads to 
   expect(info.downloadEncryptedQueryParam).toBe('DL')
   expect(info.aeskey).toMatch(/^[0-9a-f]{32}$/)
   expect(info.filekey).toMatch(/^[0-9a-f]{32}$/)
+})
+
+test('parseAesKey accepts raw-16-byte base64 (images)', () => {
+  const raw = Buffer.alloc(16, 9)
+  expect(parseAesKey(raw.toString('base64')).equals(raw)).toBe(true)
+})
+
+test('parseAesKey accepts base64-of-hex-string (files/voice)', () => {
+  const raw = Buffer.alloc(16, 3)
+  const b64OfHex = Buffer.from(raw.toString('hex')).toString('base64')
+  expect(parseAesKey(b64OfHex).equals(raw)).toBe(true)
+})
+
+test('parseAesKey rejects anything else, reporting the decoded length', () => {
+  const bad = Buffer.alloc(20, 1).toString('base64')
+  expect(() => parseAesKey(bad)).toThrow(/20 bytes/)
+})
+
+test('buildCdnDownloadUrl escapes the query param', () => {
+  expect(buildCdnDownloadUrl('a b&c', 'https://cdn/c2c'))
+    .toBe('https://cdn/c2c/download?encrypted_query_param=a%20b%26c')
+})
+
+test('downloadAndDecrypt decrypts what the CDN returns', async () => {
+  const key = Buffer.alloc(16, 5)
+  const plain = Buffer.from('inbound picture bytes')
+  const cipher = encryptAesEcb(plain, key)
+  let seenUrl = ''
+  globalThis.fetch = (async (url: any) => {
+    seenUrl = String(url)
+    return new Response(cipher, { status: 200 })
+  }) as any
+
+  const out = await downloadAndDecrypt({
+    encryptedParam: 'PARAM',
+    aesKeyBase64: key.toString('base64'),
+    label: 'test',
+  })
+  expect(out.toString()).toBe('inbound picture bytes')
+  expect(seenUrl).toBe(`${CDN_BASE_URL}/download?encrypted_query_param=PARAM`)
+})
+
+test('downloadAndDecrypt prefers full_url and returns plain bytes without a key', async () => {
+  globalThis.fetch = (async (url: any) => {
+    expect(String(url)).toBe('https://cdn/full')
+    return new Response(Buffer.from('plain'), { status: 200 })
+  }) as any
+
+  const out = await downloadAndDecrypt({ fullUrl: 'https://cdn/full', label: 'test' })
+  expect(out.toString()).toBe('plain')
+})
+
+test('downloadAndDecrypt throws with a redacted URL on HTTP error', async () => {
+  globalThis.fetch = (async () => new Response('nope', { status: 404 })) as any
+  await expect(downloadAndDecrypt({
+    encryptedParam: 'SECRET', aesKeyBase64: Buffer.alloc(16).toString('base64'), label: 'test',
+  })).rejects.toThrow(/404/)
 })

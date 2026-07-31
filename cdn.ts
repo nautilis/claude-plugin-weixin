@@ -6,7 +6,7 @@
  * src/cdn/aes-ecb.ts, src/cdn/cdn-url.ts, src/cdn/cdn-upload.ts, src/cdn/upload.ts.
  */
 
-import { createCipheriv, createHash, randomBytes } from 'crypto'
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'crypto'
 import { readFile } from 'fs/promises'
 import { getUploadUrl, type ApiOptions } from './api.ts'
 
@@ -18,6 +18,57 @@ const UPLOAD_MAX_RETRIES = 3
 export function encryptAesEcb(plaintext: Buffer, key: Buffer): Buffer {
   const cipher = createCipheriv('aes-128-ecb', key, null)
   return Buffer.concat([cipher.update(plaintext), cipher.final()])
+}
+
+/** Decrypt with AES-128-ECB (PKCS7 padding). */
+export function decryptAesEcb(ciphertext: Buffer, key: Buffer): Buffer {
+  const decipher = createDecipheriv('aes-128-ecb', key, null)
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()])
+}
+
+export function buildCdnDownloadUrl(encryptedQueryParam: string, cdnBaseUrl = CDN_BASE_URL): string {
+  return `${cdnBaseUrl}/download?encrypted_query_param=${encodeURIComponent(encryptedQueryParam)}`
+}
+
+/**
+ * CDNMedia.aes_key arrives in two encodings — the wire format is ambiguous, so
+ * the decoded length is what tells them apart:
+ *   base64(raw 16 bytes)           → images
+ *   base64(32-char hex string)     → file / voice / video
+ *
+ * Ported from Tencent/openclaw-weixin src/cdn/pic-decrypt.ts.
+ */
+export function parseAesKey(aesKeyBase64: string): Buffer {
+  const decoded = Buffer.from(aesKeyBase64, 'base64')
+  if (decoded.length === 16) return decoded
+  if (decoded.length === 32 && /^[0-9a-fA-F]{32}$/.test(decoded.toString('ascii'))) {
+    return Buffer.from(decoded.toString('ascii'), 'hex')
+  }
+  throw new Error(
+    `aes_key must decode to 16 raw bytes or a 32-char hex string, got ${decoded.length} bytes`,
+  )
+}
+
+/**
+ * Download one CDN object and decrypt it. Without a key the bytes are returned
+ * as-is — the CDN serves some media unencrypted.
+ */
+export async function downloadAndDecrypt(p: {
+  encryptedParam?: string
+  fullUrl?: string
+  aesKeyBase64?: string
+  label: string
+}): Promise<Buffer> {
+  const url = p.fullUrl?.trim() || buildCdnDownloadUrl(p.encryptedParam ?? '')
+  const res = await fetch(url)
+  if (!res.ok) {
+    throw new Error(
+      `${p.label}: CDN download ${res.status} ${res.statusText} url=${redactUrl(url)}`,
+    )
+  }
+  const bytes = Buffer.from(await res.arrayBuffer())
+  if (!p.aesKeyBase64) return bytes
+  return decryptAesEcb(bytes, parseAesKey(p.aesKeyBase64))
 }
 
 /** Ciphertext size for AES-128-ECB with PKCS7 padding. */
