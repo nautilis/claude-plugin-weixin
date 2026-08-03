@@ -132,7 +132,7 @@ export async function sendMediaFile(
 }
 
 export type MediaRef = {
-  kind: 'image' | 'file'
+  kind: 'image' | 'file' | 'video'
   encryptedParam?: string
   fullUrl?: string
   /** CDNMedia.aes_key encoding; see cdn.ts parseAesKey. */
@@ -174,6 +174,18 @@ function collectMediaRef(refs: MediaRef[], item: any): void {
         ? Buffer.from(img.aeskey, 'hex').toString('base64')
         : media.aes_key,
       declaredSize: img.hd_size ?? img.mid_size,
+    })
+  } else if (item?.type === MessageItemType.VIDEO) {
+    const v = item.video_item
+    const media = v?.media
+    if (!media?.encrypt_query_param && !media?.full_url) return
+    refs.push({
+      kind: 'video',
+      encryptedParam: media.encrypt_query_param,
+      fullUrl: media.full_url,
+      aesKeyBase64: media.aes_key,
+      // video_size is the ciphertext length, like image_item.mid_size.
+      declaredSize: v.video_size,
     })
   } else if (item?.type === MessageItemType.FILE) {
     const f = item.file_item

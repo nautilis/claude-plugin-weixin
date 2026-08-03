@@ -70,6 +70,25 @@ test('fetchInboundMedia downloads, decrypts and saves into the inbox', async () 
   rmSync(saved[0]!.path, { force: true })
 })
 
+test('fetchInboundMedia saves video as .mp4 — it arrives with no name at all', async () => {
+  const key = Buffer.alloc(16, 2)
+  const clip = Buffer.from('\x00\x00\x00\x18ftypmp42 fake payload')
+  globalThis.fetch = (async () =>
+    new Response(encryptAesEcb(clip, key), { status: 200 })) as any
+
+  const { saved, errors } = await fetchInboundMedia([{
+    kind: 'video', encryptedParam: 'VP', aesKeyBase64: key.toString('base64'), declaredSize: 32,
+  }])
+
+  expect(errors).toEqual([])
+  expect(saved).toHaveLength(1)
+  expect(saved[0]!.kind).toBe('video')
+  expect(saved[0]!.size).toBe(clip.length)
+  expect(dirname(saved[0]!.path)).toBe(INBOX_DIR)
+  expect(saved[0]!.path.endsWith('.mp4')).toBe(true)
+  rmSync(saved[0]!.path, { force: true })
+})
+
 test('fetchInboundMedia never lets a sender-supplied name reach the path', async () => {
   const key = Buffer.alloc(16, 2)
   globalThis.fetch = (async () =>

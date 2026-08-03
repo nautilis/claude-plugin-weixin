@@ -136,6 +136,35 @@ test('extractMediaRefs pulls file refs with name and plaintext length', () => {
   expect(refs[0]!.declaredSize).toBe(2048)
 })
 
+test('extractMediaRefs pulls video refs with the ciphertext size', () => {
+  const refs = extractMediaRefs({
+    item_list: [{
+      type: 5,
+      video_item: { media: { encrypt_query_param: 'VP', aes_key: 'VK' }, video_size: 8192 },
+    }],
+  })
+  expect(refs).toHaveLength(1)
+  expect(refs[0]!.kind).toBe('video')
+  expect(refs[0]!.encryptedParam).toBe('VP')
+  expect(refs[0]!.aesKeyBase64).toBe('VK')
+  expect(refs[0]!.declaredSize).toBe(8192)
+})
+
+test('extractMediaRefs downloads the video a quoted message points at', () => {
+  const refs = extractMediaRefs({
+    item_list: [{
+      type: 1,
+      text_item: { text: '这段是什么' },
+      ref_msg: {
+        message_item: { type: 5, video_item: { media: { full_url: 'https://cdn/v', aes_key: 'VK' } } },
+      },
+    }],
+  })
+  expect(refs).toHaveLength(1)
+  expect(refs[0]!.kind).toBe('video')
+  expect(refs[0]!.fullUrl).toBe('https://cdn/v')
+})
+
 test('extractMediaRefs downloads the media a quoted message points at', () => {
   const refs = extractMediaRefs({
     item_list: [{
@@ -172,6 +201,7 @@ test('extractMediaRefs skips items with no CDN reference at all', () => {
   expect(extractMediaRefs({ item_list: [
     { type: 2, image_item: { media: {} } },
     { type: 4, file_item: { file_name: 'x.pdf' } },
+    { type: 5, video_item: { video_size: 10 } },
     { type: 3, voice_item: { text: 'hi' } },
   ] })).toHaveLength(0)
   expect(extractMediaRefs({})).toHaveLength(0)

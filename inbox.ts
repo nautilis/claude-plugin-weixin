@@ -70,14 +70,17 @@ export function pruneInbox(maxAgeMs = INBOX_MAX_AGE_MS): number {
 }
 
 export type SavedAttachment = {
-  kind: 'image' | 'file'
+  kind: 'image' | 'file' | 'video'
   path: string
   name?: string
   size: number
 }
 
 function saveToInbox(buf: Buffer, ref: MediaRef): string {
-  const ext = ref.kind === 'image' ? sniffImageExt(buf) : safeExtFromName(ref.name)
+  // A video item carries no file_name — WeChat sends mp4, as upstream assumes.
+  const ext = ref.kind === 'image' ? sniffImageExt(buf)
+    : ref.kind === 'video' ? '.mp4'
+      : safeExtFromName(ref.name)
   // The filename is ours alone — ref.name never touches the filesystem path.
   const path = join(INBOX_DIR, `${Date.now()}-${randomBytes(4).toString('hex')}${ext}`)
   mkdirSync(INBOX_DIR, { recursive: true, mode: 0o700 })
