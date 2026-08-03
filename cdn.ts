@@ -13,6 +13,9 @@ import { getUploadUrl, type ApiOptions } from './api.ts'
 export const CDN_BASE_URL = 'https://novac2c.cdn.weixin.qq.com/c2c'
 
 const UPLOAD_MAX_RETRIES = 3
+const DOWNLOAD_MAX_RETRIES = 3
+/** Per attempt, and it covers the body too — a stalled transfer must not hang the poll loop. */
+const DOWNLOAD_TIMEOUT_MS = 120_000
 
 /** Encrypt with AES-128-ECB (PKCS7 padding is the default). */
 export function encryptAesEcb(plaintext: Buffer, key: Buffer): Buffer {
@@ -58,17 +61,38 @@ export async function downloadAndDecrypt(p: {
   fullUrl?: string
   aesKeyBase64?: string
   label: string
+  timeoutMs?: number
 }): Promise<Buffer> {
   const url = p.fullUrl?.trim() || buildCdnDownloadUrl(p.encryptedParam ?? '')
-  const res = await fetch(url)
-  if (!res.ok) {
-    throw new Error(
-      `${p.label}: CDN download ${res.status} ${res.statusText} url=${redactUrl(url)}`,
-    )
+
+  let lastError: unknown
+  for (let attempt = 1; attempt <= DOWNLOAD_MAX_RETRIES; attempt++) {
+    try {
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(p.timeoutMs ?? DOWNLOAD_TIMEOUT_MS),
+      })
+      if (!res.ok) {
+        const err = new Error(
+          `${p.label}: CDN download ${res.status} ${res.statusText} url=${redactUrl(url)}`,
+        )
+        // A 4xx means the param is expired or wrong — retrying cannot fix it.
+        if (res.status >= 400 && res.status < 500) throw Object.assign(err, { fatal: true })
+        throw err
+      }
+      const bytes = Buffer.from(await res.arrayBuffer())
+      if (!p.aesKeyBase64) return bytes
+      return decryptAesEcb(bytes, parseAesKey(p.aesKeyBase64))
+    } catch (err) {
+      if ((err as any)?.fatal) throw err
+      lastError = err
+      process.stderr.write(
+        `weixin channel: ${p.label} download attempt ${attempt}/${DOWNLOAD_MAX_RETRIES} failed ` +
+        `url=${redactUrl(url)} error=${String(err)}\n`,
+      )
+    }
   }
-  const bytes = Buffer.from(await res.arrayBuffer())
-  if (!p.aesKeyBase64) return bytes
-  return decryptAesEcb(bytes, parseAesKey(p.aesKeyBase64))
+
+  throw lastError
 }
 
 /** Ciphertext size for AES-128-ECB with PKCS7 padding. */

@@ -187,3 +187,59 @@ test('downloadAndDecrypt throws with a redacted URL on HTTP error', async () => 
     encryptedParam: 'SECRET', aesKeyBase64: Buffer.alloc(16).toString('base64'), label: 'test',
   })).rejects.toThrow(/404/)
 })
+
+test('downloadAndDecrypt abandons an attempt that stalls past the timeout', async () => {
+  // A stalled socket that never errors would otherwise hold the message forever.
+  let calls = 0
+  globalThis.fetch = ((_url: any, init: any) => {
+    calls++
+    return new Promise((_resolve, reject) => {
+      init.signal.addEventListener('abort', () => reject(new Error('aborted')))
+    })
+  }) as any
+
+  await expect(downloadAndDecrypt({
+    encryptedParam: 'P', label: 'test', timeoutMs: 20,
+  })).rejects.toThrow(/abort/i)
+  expect(calls).toBe(3)
+})
+
+test('downloadAndDecrypt does not retry a 4xx — the param is bad, not the connection', async () => {
+  let calls = 0
+  globalThis.fetch = (async () => {
+    calls++
+    return new Response('nope', { status: 404 })
+  }) as any
+
+  await expect(downloadAndDecrypt({ encryptedParam: 'P', label: 'test' })).rejects.toThrow(/404/)
+  expect(calls).toBe(1)
+})
+
+test('downloadAndDecrypt retries a 5xx, then reports the last failure', async () => {
+  let calls = 0
+  globalThis.fetch = (async () => {
+    calls++
+    return new Response('boom', { status: 503 })
+  }) as any
+
+  await expect(downloadAndDecrypt({ encryptedParam: 'P', label: 'test' })).rejects.toThrow(/503/)
+  expect(calls).toBe(3)
+})
+
+test('downloadAndDecrypt retries a dropped connection and still returns the bytes', async () => {
+  // The CDN drops connections mid-transfer; one retry usually gets the image.
+  const key = Buffer.alloc(16, 5)
+  const cipher = encryptAesEcb(Buffer.from('inbound picture bytes'), key)
+  let calls = 0
+  globalThis.fetch = (async () => {
+    calls++
+    if (calls < 3) throw new Error('The socket connection was closed unexpectedly')
+    return new Response(cipher, { status: 200 })
+  }) as any
+
+  const out = await downloadAndDecrypt({
+    encryptedParam: 'PARAM', aesKeyBase64: key.toString('base64'), label: 'test',
+  })
+  expect(out.toString()).toBe('inbound picture bytes')
+  expect(calls).toBe(3)
+})
