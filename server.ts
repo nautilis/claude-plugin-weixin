@@ -29,6 +29,7 @@ import { startTyping, stopTyping } from './typing.ts'
 import { extractText } from './text.ts'
 import { dumpRawMessage } from './debug.ts'
 import { loadLedger, lookupMessage, recordMessage } from './ledger.ts'
+import { exitWhenClientDisconnects } from './lifecycle.ts'
 
 const ACCESS_FILE = join(STATE_DIR, 'access.json')
 const APPROVED_DIR = join(STATE_DIR, 'approved')
@@ -366,6 +367,11 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
 // --- Connect MCP transport ---
 
 await mcp.connect(new StdioServerTransport())
+
+// The transport reads stdin but never watches it end. Without this the poll
+// loop outlives the client that started it — orphaned, invisible, and still
+// advancing the sync cursor every other instance depends on.
+exitWhenClientDisconnects(process.stdin, () => process.exit(0))
 
 // --- Inbound message handler ---
 
