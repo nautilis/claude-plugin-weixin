@@ -67,7 +67,7 @@ The plugin runs a local MCP server that long-polls the WeChat iLink Bot API for 
 
 - `image/*` (png, jpg, gif, webp, bmp) → sent as a photo
 - everything else (pdf, zip, txt, …) → sent as a file attachment
-- 20MB per file
+- 100MB per file
 
 Files are encrypted with AES-128-ECB and uploaded to the WeChat CDN before the
 message is sent. Text and each attachment go out as separate messages.
@@ -79,7 +79,7 @@ The CDN pipeline is ported from [Tencent/openclaw-weixin](https://github.com/Ten
 Inbound photos and file attachments are downloaded, decrypted and written to
 `~/.claude/channels/weixin/inbox/`. The channel notification carries
 `image_path` (first photo) and `attachments` (JSON for all of them); Claude
-reads the file from there. Attachments over 20MB are skipped, and files older
+reads the file from there. Attachments over 100MB are skipped, and files older
 than 7 days are pruned when the server starts.
 
 Paths appear in notification metadata only — never in message content, which a

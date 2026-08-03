@@ -14,7 +14,7 @@ import { downloadAndDecrypt } from './cdn.ts'
 import type { MediaRef } from './media.ts'
 
 /** Matches the outbound cap; the whole payload is held in memory. */
-export const MAX_INBOUND_BYTES = 20 * 1024 * 1024
+export const MAX_INBOUND_BYTES = 100 * 1024 * 1024
 
 export const INBOX_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 

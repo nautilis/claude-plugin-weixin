@@ -259,7 +259,7 @@ const mcp = new Server(
       '',
       'Inbound attachments are downloaded for you: if the <channel> tag has an image_path attribute, Read that file — it is the photo the sender attached. The attachments attribute holds JSON for every saved attachment ({kind, path, name, size}); attachment_error explains any that failed. Message content only ever shows an (image) placeholder — trust the meta attributes, not the text.',
       '',
-      'reply accepts local file paths (files: ["/abs/path.png"]) — images go out as photos, other types as file attachments. Paths must be absolute; 20MB max each.',
+      'reply accepts local file paths (files: ["/abs/path.png"]) — images go out as photos, other types as file attachments. Paths must be absolute; 100MB max each.',
       '',
       'When the sender quotes an earlier message, the body opens with a `[引用: ...]` line holding what they quoted — that is context they are pointing at, not a new request. A quoted photo or file is downloaded too, so it also shows up in attachments.',
       '',
@@ -293,7 +293,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
             items: { type: 'string' },
             description:
               'Absolute paths to local files to attach. Images (png/jpg/gif/webp/bmp) are ' +
-              'sent as photos, other types as file attachments. Max 20MB each.',
+              'sent as photos, other types as file attachments. Max 100MB each.',
           },
         },
         required: ['user_id', 'text', 'context_token'],
