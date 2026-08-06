@@ -87,6 +87,32 @@ test('stopTyping without an active session sends nothing', async () => {
   expect(calls).toHaveLength(0)
 })
 
+test('a reply that lands before the ticket does cancels the pending typing', async () => {
+  let releaseConfig: () => void = () => {}
+  const gate = new Promise<void>(r => { releaseConfig = r })
+  const calls: Array<{ endpoint: string; body: any }> = []
+  globalThis.fetch = (async (url: any, init: any) => {
+    const u = String(url)
+    const endpoint = u.slice(u.lastIndexOf('/') + 1)
+    calls.push({ endpoint, body: JSON.parse(init.body) })
+    if (endpoint === 'getconfig') {
+      await gate
+      return new Response(JSON.stringify({ ret: 0, typing_ticket: 'TICKET' }))
+    }
+    return new Response(JSON.stringify({ ret: 0 }))
+  }) as any
+
+  // server.ts fires this with `void` — it is still waiting on getconfig.
+  const starting = startTyping(API, { userId: 'u1', intervalMs: 10, maxMs: 10_000 })
+  // Claude answers fast, so the reply tool's finally block runs first.
+  await stopTyping(API, 'u1')
+  releaseConfig()
+  await starting
+
+  await Bun.sleep(35)
+  expect(typingCalls(calls).filter(c => c.body.status === 1)).toHaveLength(0)
+})
+
 test('a sendtyping failure never propagates to the caller', async () => {
   globalThis.fetch = (async (url: any) => {
     if (String(url).endsWith('getconfig')) {

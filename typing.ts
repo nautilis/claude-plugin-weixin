@@ -28,6 +28,19 @@ type Session = {
 const ticketCache = new Map<string, TicketEntry>()
 const sessions = new Map<string, Session>()
 
+/**
+ * Bumped by every start and every stop. startTyping fetches a ticket before it
+ * has a session to cancel, so a stop landing inside that window has nothing to
+ * find — the generation is what tells the resuming start it was overtaken.
+ */
+const generations = new Map<string, number>()
+
+function nextGeneration(userId: string): number {
+  const gen = (generations.get(userId) ?? 0) + 1
+  generations.set(userId, gen)
+  return gen
+}
+
 /** Test seam: drop every cached ticket and cancel every timer. */
 export function resetTypingState(): void {
   for (const s of sessions.values()) {
@@ -36,6 +49,7 @@ export function resetTypingState(): void {
   }
   sessions.clear()
   ticketCache.clear()
+  generations.clear()
 }
 
 /**
@@ -93,8 +107,13 @@ export async function startTyping(
   api: ApiOptions,
   p: { userId: string; contextToken?: string; intervalMs?: number; maxMs?: number },
 ): Promise<void> {
+  const gen = nextGeneration(p.userId)
+
   const ticket = await getTypingTicket(api, p.userId, p.contextToken)
   if (!ticket) return
+  // A reply (or a newer message) landed while we were fetching the ticket.
+  // Starting now would pulse "typing" at someone who already has their answer.
+  if (generations.get(p.userId) !== gen) return
 
   clearSession(p.userId)
 
@@ -115,6 +134,9 @@ export async function startTyping(
 
 /** Clear the indicator. A no-op when this user has no active session. */
 export async function stopTyping(api: ApiOptions, userId: string): Promise<void> {
+  // Invalidate any start still waiting on its ticket; without this it would
+  // resume after us and leave the indicator stuck until the hard timeout.
+  nextGeneration(userId)
   const s = clearSession(userId)
   if (!s) return
   await pulse(api, userId, s.ticket, TypingStatus.CANCEL)
