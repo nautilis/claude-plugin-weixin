@@ -5,6 +5,7 @@ user-invocable: true
 allowed-tools:
   - Read
   - Write
+  - Bash(echo *)
   - Bash(ls *)
   - Bash(mkdir *)
   - Bash(bun *)
@@ -13,7 +14,12 @@ allowed-tools:
 # /weixin:configure — WeChat Channel Setup
 
 Manages WeChat iLink Bot login and credential storage. Credentials live in
-`~/.claude/channels/weixin/credentials.json`.
+`<state-dir>/credentials.json`.
+
+**Resolve `<state-dir>` first**, before reading anything: run
+`echo "${WEIXIN_STATE_DIR:-$HOME/.claude/channels/weixin}"`. A session running
+a second bot points that variable elsewhere. `login-poll.ts` honours it too, so
+a login started from such a session writes where that session reads.
 
 Arguments passed: `$ARGUMENTS`
 
@@ -25,11 +31,11 @@ Arguments passed: `$ARGUMENTS`
 
 Read both state files and give the user a complete picture:
 
-1. **Credentials** — check `~/.claude/channels/weixin/credentials.json` for
+1. **Credentials** — check `<state-dir>/credentials.json` for
    `token` and `baseUrl`. Show set/not-set; if set, show token first 6 chars
    masked.
 
-2. **Access** — read `~/.claude/channels/weixin/access.json` (missing file
+2. **Access** — read `<state-dir>/access.json` (missing file
    = defaults: `dmPolicy: "pairing"`, empty allowlist). Show:
    - DM policy and what it means
    - Allowed senders: count and list
@@ -94,7 +100,7 @@ the poll script is still running.
 
 ### `clear` — remove credentials
 
-Delete `~/.claude/channels/weixin/credentials.json`.
+Delete `<state-dir>/credentials.json`.
 
 ### `baseurl <url>` — set custom API base URL
 

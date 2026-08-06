@@ -11,7 +11,15 @@ import { homedir } from 'os'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 
-export const STATE_DIR = join(homedir(), '.claude', 'channels', 'weixin')
+/**
+ * Everything this channel owns — credentials, allowlist, sync cursor, inbox.
+ *
+ * getUpdates allows one consumer per token, so two servers sharing a state dir
+ * race for the same message stream. Point WEIXIN_STATE_DIR at a second
+ * directory to run an independent bot, the way TELEGRAM_STATE_DIR does.
+ */
+export const STATE_DIR = process.env.WEIXIN_STATE_DIR
+  ?? join(homedir(), '.claude', 'channels', 'weixin')
 
 /** Inbound media lands here; deliberately sendable (see media.ts). */
 export const INBOX_DIR = join(STATE_DIR, 'inbox')

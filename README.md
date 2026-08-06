@@ -154,6 +154,24 @@ metadata 里，Claude 调 reply 工具时原样传回。
 | `messages.jsonl` | 用于还原引用的消息流水，保留 7 天 |
 | `raw/` | 原始报文（仅在开启抓取时） |
 
+### 跑第二个机器人
+
+`getUpdates` 每个 token 只允许一个消费者，所以两个会话共用同一个目录会**抢同一条
+消息流**：谁抢到归谁，另一边什么也收不到，「正在输入」也可能停不下来。
+
+要同时跑两个微信机器人，给第二个单独指一个目录（同 Telegram 的
+`TELEGRAM_STATE_DIR`）：
+
+```bash
+WEIXIN_STATE_DIR=~/.claude/channels/weixin-b claude
+```
+
+这个目录下是**完整独立的一套**：另扫一次码得到另一份 `credentials.json`，另一份
+allowlist、收件箱和游标。`/weixin:configure` 和 `/weixin:access` 都跟着这个变量走，
+在哪个会话里跑就改哪一份。
+
+不设这个变量时行为和以前完全一样。
+
 ## License
 
 MIT —— 与其派生自的 [m1heng/claude-plugin-weixin](https://github.com/m1heng/claude-plugin-weixin)

@@ -1,4 +1,5 @@
 import { test, expect, afterEach } from 'bun:test'
+import { join } from 'path'
 import {
   buildClientVersion, randomWechatUin, buildHeaders,
   textItem, getUploadUrl, MessageItemType, UploadMediaType,
@@ -158,4 +159,27 @@ test('sendTyping posts the ticket and status', async () => {
   expect(seenBody.typing_ticket).toBe('TICKET')
   expect(seenBody.status).toBe(2)
   expect(seenBody.base_info.channel_version).toBeTruthy()
+})
+
+/**
+ * STATE_DIR is resolved once at import time, so each case needs its own
+ * process — the same reason server.test.ts spawns instead of setting HOME.
+ */
+async function stateDirUnder(stateDir?: string): Promise<string> {
+  const env: Record<string, string> = { ...process.env as any, HOME: '/tmp/fake-home' }
+  if (stateDir) env.WEIXIN_STATE_DIR = stateDir
+  else delete env.WEIXIN_STATE_DIR
+  const proc = Bun.spawn(
+    ['bun', '-e', `import { STATE_DIR } from '${join(import.meta.dir, 'api.ts')}'; console.log(STATE_DIR)`],
+    { env, stdout: 'pipe', stderr: 'inherit' },
+  )
+  return (await new Response(proc.stdout).text()).trim()
+}
+
+test('WEIXIN_STATE_DIR overrides the state directory', async () => {
+  expect(await stateDirUnder('/tmp/weixin-b')).toBe('/tmp/weixin-b')
+})
+
+test('without the env var the state directory stays under ~/.claude', async () => {
+  expect(await stateDirUnder()).toBe('/tmp/fake-home/.claude/channels/weixin')
 })

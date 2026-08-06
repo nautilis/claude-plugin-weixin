@@ -3,8 +3,8 @@
  * WeChat (微信) channel for Claude Code.
  *
  * Self-contained MCP server with full access control: pairing, allowlists.
- * State lives in ~/.claude/channels/weixin/ — managed by the /weixin:access
- * and /weixin:configure skills.
+ * State lives in ~/.claude/channels/weixin/ (or $WEIXIN_STATE_DIR) — managed
+ * by the /weixin:access and /weixin:configure skills.
  *
  * Uses WeChat iLink Bot API with HTTP long-poll — no public webhook needed.
  */

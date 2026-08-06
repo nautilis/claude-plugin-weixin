@@ -8,10 +8,11 @@
  */
 
 import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'fs'
-import { homedir } from 'os'
 import { join } from 'path'
 
-const STATE_DIR = join(homedir(), '.claude', 'channels', 'weixin')
+// Shared with the server so a WEIXIN_STATE_DIR login writes where it reads.
+import { STATE_DIR } from './api.ts'
+
 const CREDENTIALS_FILE = join(STATE_DIR, 'credentials.json')
 const ACCESS_FILE = join(STATE_DIR, 'access.json')
 
