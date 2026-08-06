@@ -315,10 +315,12 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const contextToken = args.context_token as string
         const files = Array.isArray(args.files) ? (args.files as string[]) : []
 
-        if (!contextToken) throw new Error('context_token is required')
-        assertAllowedUser(userId)
-
         try {
+          // Inside the try: a rejected reply must still drop the indicator,
+          // or the sender watches "typing" until the 3-minute hard timeout.
+          if (!contextToken) throw new Error('context_token is required')
+          assertAllowedUser(userId)
+
           const access = loadAccess()
           const limit = Math.max(1, Math.min(access.textChunkLimit ?? MAX_CHUNK_LIMIT, MAX_CHUNK_LIMIT))
           const chunks = text ? chunk(text, limit) : []
